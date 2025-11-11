@@ -24,4 +24,5 @@ RUN pip3 install --no-cache-dir numpy pandas nibabel tqdm SimpleITK scikit-image
 ENV PYTHONPATH="${PYTHONPATH}:${CODE_DIR}:${CODE_DIR}/MAST_conversion:/opt/ASAP/bin"
 
 # 7. Default behavior — start an interactive shell
-CMD ["/bin/bash"]
+ENTRYPOINT ["/bin/bash"]
+
