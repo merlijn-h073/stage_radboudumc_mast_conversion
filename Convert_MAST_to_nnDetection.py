@@ -113,7 +113,7 @@ for csv_path in tqdm(sorted(SOURCE_INPUTS.glob("*.csv")), desc="Processing patie
         nib.save(nib.Nifti1Image(new_mask, affine=mask_nii.affine, header=mask_nii.header), str(mask_out))
 
         img_out = IMAGES_DIR / nn_name(f"{patient_id}_{scan_type}_img_00.nii")
-        shutil.copy2(img_file, img_out)
+        shutil.copyfile(img_file, img_out)
 
         cases.append({
             "image": str(img_out.relative_to(TARGET_ROOT)),
