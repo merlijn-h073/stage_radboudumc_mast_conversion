@@ -111,7 +111,12 @@ for csv_path in tqdm(sorted(SOURCE_INPUTS.glob("*.csv")), desc="Processing patie
         # Save filtered mask & image
         mask_out = LABELS_DIR / f"{patient_id}_{scan_type}_mask_00_lung.nii.gz"
         nib.save(nib.Nifti1Image(new_mask, affine=mask_nii.affine, header=mask_nii.header), str(mask_out))
-
+        # === Create nnDetection instance metadata JSON ===
+        instances = {str(i): 1 for i in range(1, len(present_ids) + 1)}
+        json_out = LABELS_DIR / f"{patient_id}_{scan_type}_mask_00_lung.json"
+        with open(json_out, "w") as jf:
+            json.dump({"instances": instances}, jf, indent=4)
+        # Save image
         img_out = IMAGES_DIR / nn_name(f"{patient_id}_{scan_type}_img_00.nii")
         shutil.copyfile(img_file, img_out)
 
