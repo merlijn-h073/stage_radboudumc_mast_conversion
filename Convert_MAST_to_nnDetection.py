@@ -7,6 +7,12 @@ Convert the MAST dataset to a lung-only nnDetection dataset (voxel-based version
 - Renumbers lung lesion voxel values consecutively (1..N) with no gaps.
 - No resampling allowed — raises error if shapes differ.
 - Creates nnDetection-ready dataset.json and runs validation.
+Convert the MAST dataset to an nnDetection-compatible lung-lesion dataset
+with automatic train/test splitting based on a predefined patient-ID list.
+- Automatically routes cases into imagesTr/labelsTr OR imagesTs/labelsTs
+- Builds dataset.json with correct "training" and "test" lists
+- Writes instance metadata for each mask (nnDetection requirement)
+- Validation included
 """
 
 import os
@@ -19,22 +25,40 @@ import numpy as np
 import nibabel as nib
 from tqdm import tqdm
 
-# === PATHS ===
+# =====================================================================================
+# PATHS
+# =====================================================================================
+
 SOURCE_INPUTS = Path(os.environ["SOURCE_INPUTS"])
 SOURCE_TARGETS = Path(os.environ["SOURCE_TARGETS"])
 TARGET_ROOT = Path(os.environ["TARGET_ROOT"])
 
-IMAGES_DIR = TARGET_ROOT / "imagesTr"
-LABELS_DIR = TARGET_ROOT / "labelsTr"
-for d in [IMAGES_DIR, LABELS_DIR]:
+IMAGES_TR = TARGET_ROOT / "imagesTr"
+LABELS_TR = TARGET_ROOT / "labelsTr"
+IMAGES_TS = TARGET_ROOT / "imagesTs"
+LABELS_TS = TARGET_ROOT / "labelsTs"
+
+for d in [IMAGES_TR, LABELS_TR, IMAGES_TS, LABELS_TS]:
     d.mkdir(parents=True, exist_ok=True)
 
-# === DATASET METADATA ===
-TASK_NAME = "Task_LungLesions"
-DESCRIPTION = "Filtered subset of MAST containing only lung lesions (BL + FU, voxel-based presence check)."
-REFERENCE = "https://fdat.uni-tuebingen.de/records/75kj1-64747"
+# =====================================================================================
+# TEST SET (Provided)
+# =====================================================================================
 
-# === HELPERS ===
+TEST_IDS = {
+    "9872ed9fc2","3b8a614226","6883966fd8","74db120f0a","8f121ce07d",
+    "a27ef1c79c","7a614fd06c","5ef059938b","c0e190d826","555d6702c9",
+    "2a79ea27c2","96da2f590c","ce08becc73","3644a684f9","e46d0ac1f1",
+    "c4de9fe968","5072d348b2","dc5c7986da","fb8490a950","18bbcaa5ef",
+    "5737c6ec2e","6c4b761a28","e64770ac6b","441954d29a","defd402043",
+    "cfa0860e83","0f49c89d1e","e7db56dbec","19f3cd308f","57aeee35c9",
+    "93dd4de5cd","c8ffe9a587","5f93f98352","13fe9d8431","58a2fc6ed3"
+}
+
+# =====================================================================================
+# HELPERS
+# =====================================================================================
+
 def nn_name(filename: str) -> str:
     """Append _0000.nii.gz if missing for nnDetection."""
     if filename.endswith(".nii.gz"):
@@ -43,38 +67,46 @@ def nn_name(filename: str) -> str:
         filename = filename[:-4]
     return filename + "_0000.nii.gz"
 
+
 def find_file(base: Path, pattern: str):
     matches = list(base.glob(pattern))
     return matches[0] if matches else None
 
-# === MAIN PROCESSING ===
-cases = []
+
+# =====================================================================================
+# MAIN PROCESSING
+# =====================================================================================
+
+print("\n=== Starting MAST → nnDetection conversion (with train/test split) ===")
+
+train_cases = []
+test_cases = []
+
 kept_log = []
 num_patients = 0
 num_cases = 0
 num_lesions_total = 0
 
-print("\n=== Starting MAST → nnDetection conversion ===")
-
 for csv_path in tqdm(sorted(SOURCE_INPUTS.glob("*.csv")), desc="Processing patients"):
     patient_id = csv_path.stem.split("_")[0]
     num_patients += 1
+
+    is_test = patient_id in TEST_IDS
 
     df = pd.read_csv(csv_path)
     if "lesion_id" not in df.columns or "lesion_type" not in df.columns:
         continue
 
-    # Select lung lesions
     df["lesion_type"] = df["lesion_type"].astype(str).str.strip().str.lower()
     lung_df = df[df["lesion_type"] == "lung"]
     if lung_df.empty:
         continue
 
-    # Prepare both scan types
+    # Process both BL and FU scans
     for scan_type in ["BL", "FU"]:
         img_file = find_file(SOURCE_INPUTS, f"{patient_id}_{scan_type}_img_00.nii*")
 
-        # Mask search order depends on scan type
+        # mask lookup
         if scan_type == "BL":
             mask_file = find_file(SOURCE_INPUTS, f"{patient_id}_{scan_type}_mask_00.nii*")
         else:  # FU
@@ -85,7 +117,6 @@ for csv_path in tqdm(sorted(SOURCE_INPUTS.glob("*.csv")), desc="Processing patie
             print(f"⚠️ Missing {scan_type} image or mask for {patient_id}.")
             continue
 
-        # Load mask and image
         mask_nii = nib.load(str(mask_file))
         mask_data = mask_nii.get_fdata().astype(np.int32)
         img_nii = nib.load(str(img_file))
@@ -94,12 +125,12 @@ for csv_path in tqdm(sorted(SOURCE_INPUTS.glob("*.csv")), desc="Processing patie
             print(f"⚠️ Shape mismatch for {patient_id}_{scan_type}. Skipping.")
             continue
 
-        # Lesion IDs present in mask
         lesion_ids = lung_df["lesion_id"].astype(int).tolist()
         present_ids = [lid for lid in lesion_ids if (mask_data == lid).any()]
         if not present_ids:
             continue
 
+        # Renumber masks to 1..N
         new_mask = np.zeros_like(mask_data, dtype=np.int16)
         for new_id, old_id in enumerate(present_ids, start=1):
             new_mask[mask_data == old_id] = new_id
@@ -108,89 +139,124 @@ for csv_path in tqdm(sorted(SOURCE_INPUTS.glob("*.csv")), desc="Processing patie
         num_cases += 1
         kept_log.append({"patient": patient_id, "scan": scan_type, "count": len(present_ids)})
 
-        # Save filtered mask & image
-        mask_out = LABELS_DIR / f"{patient_id}_{scan_type}_mask_00_lung.nii.gz"
-        nib.save(nib.Nifti1Image(new_mask, affine=mask_nii.affine, header=mask_nii.header), str(mask_out))
-        # === Create nnDetection instance metadata JSON ===
-        instances = {str(i): 1 for i in range(1, len(present_ids) + 1)}
-        json_out = LABELS_DIR / f"{patient_id}_{scan_type}_mask_00_lung.json"
-        with open(json_out, "w") as jf:
-            json.dump({"instances": instances}, jf, indent=4)
+        # Output paths (train or test)
+        if is_test:
+            img_out = IMAGES_TS / nn_name(f"{patient_id}_{scan_type}_img_00.nii")
+            mask_out = LABELS_TS / f"{patient_id}_{scan_type}_mask_00_lung.nii.gz"
+        else:
+            img_out = IMAGES_TR / nn_name(f"{patient_id}_{scan_type}_img_00.nii")
+            mask_out = LABELS_TR / f"{patient_id}_{scan_type}_mask_00_lung.nii.gz"
+
         # Save image
-        img_out = IMAGES_DIR / nn_name(f"{patient_id}_{scan_type}_img_00.nii")
         shutil.copyfile(img_file, img_out)
 
-        cases.append({
-            "image": str(img_out.relative_to(TARGET_ROOT)),
-            "label": str(mask_out.relative_to(TARGET_ROOT))
-        })
+        # Save mask
+        nib.save(nib.Nifti1Image(new_mask, affine=mask_nii.affine,
+                                 header=mask_nii.header),
+                 str(mask_out))
 
-# === CREATE DATASET.JSON ===
+        # Instance metadata JSON
+        instances = {str(i): 1 for i in range(1, len(present_ids) + 1)}
+        json_out = mask_out.with_suffix(".json")
+        with open(json_out, "w") as jf:
+            json.dump({"instances": instances}, jf, indent=4)
+
+        # Add to dataset.json lists
+        rel_img = str(img_out.relative_to(TARGET_ROOT))
+        rel_lbl = str(mask_out.relative_to(TARGET_ROOT))
+
+        if is_test:
+            test_cases.append({"image": rel_img})
+        else:
+            train_cases.append({"image": rel_img, "label": rel_lbl})
+
+
+# =====================================================================================
+# CREATE DATASET.JSON
+# =====================================================================================
+
 dataset_json = {
-    "name": TASK_NAME,
-    "description": DESCRIPTION,
+    "name": "Task_LungLesions",
+    "description": "Filtered subset of MAST (lung lesions only, BL+FU).",
     "tensorImageSize": "3D",
-    "reference": REFERENCE,
+    "reference": "https://fdat.uni-tuebingen.de/records/75kj1-64747",
     "licence": "CC BY 4.0",
     "release": "1.0",
     "modality": {"0": "CT"},
     "labels": {"0": "background", "1": "lung_lesion"},
-    "numTraining": len(cases),
-    "training": cases,
-    "test": []
+    "numTraining": len(train_cases),
+    "training": train_cases,
+    "test": test_cases
 }
 
 with open(TARGET_ROOT / "dataset.json", "w") as f:
     json.dump(dataset_json, f, indent=4)
 
-# === FINAL SUMMARY ===
-print("\n=== Conversion summary ===")
-by_patient = defaultdict(lambda: {"BL": 0, "FU": 0})
-for row in kept_log:
-    by_patient[row["patient"]][row["scan"]] += row["count"]
+# =====================================================================================
+# SUMMARY
+# =====================================================================================
 
-for pid, c in by_patient.items():
+print("\n=== Conversion Summary ===")
+bp = defaultdict(lambda: {"BL": 0, "FU": 0})
+for row in kept_log:
+    bp[row["patient"]][row["scan"]] += row["count"]
+
+for pid, c in bp.items():
     print(f" - {pid}: BL={c['BL']}  FU={c['FU']}  (total={c['BL'] + c['FU']})")
 
-print(f"\n✅ Patients processed: {num_patients}")
-print(f"✅ Total BL/FU cases exported: {num_cases}")
-print(f"✅ Total lung lesions kept: {num_lesions_total}")
-print(f"✅ dataset.json created at: {TARGET_ROOT / 'dataset.json'}")
+print(f"\nTotal patients processed: {num_patients}")
+print(f"Total BL/FU cases exported: {num_cases}")
+print(f"Total lung lesions kept: {num_lesions_total}")
+print(f"Train cases: {len(train_cases)}")
+print(f"Test cases:  {len(test_cases)}")
+print(f"\nDataset.json written to: {TARGET_ROOT / 'dataset.json'}")
 
-# === VALIDATION BLOCK ===
+# =====================================================================================
+# SIMPLE VALIDATION
+# =====================================================================================
+
 print("\n=== Validating dataset ===")
-valid_count = 0
+valid = 0
+missing = 0
+empty = 0
 shape_mismatch = 0
-empty_masks = 0
-missing_files = 0
 
-for item in cases:
+all_cases = train_cases + test_cases
+
+for item in all_cases:
     img_path = TARGET_ROOT / item["image"]
-    lbl_path = TARGET_ROOT / item["label"]
+
+    if "label" in item:
+        lbl_path = TARGET_ROOT / item["label"]
+    else:
+        # test set: labelsTs may or may not exist
+        lbl_try = (TARGET_ROOT / item["image"]).name.replace("_img_00_0000.nii.gz",
+                                                             "_mask_00_lung.nii.gz")
+        lbl_path = TARGET_ROOT / ("labelsTs" / lbl_try)
 
     if not img_path.exists() or not lbl_path.exists():
-        missing_files += 1
+        missing += 1
         continue
 
     img = nib.load(str(img_path))
     lbl = nib.load(str(lbl_path))
+
     if img.shape != lbl.shape:
         shape_mismatch += 1
         continue
 
     if not np.any(lbl.get_fdata()):
-        empty_masks += 1
+        empty += 1
         continue
 
-    valid_count += 1
+    valid += 1
 
-print(f"\nValidation summary:")
-print(f"✅ Valid image/mask pairs: {valid_count}")
-print(f"⚠️ Shape mismatches: {shape_mismatch}")
-print(f"⚠️ Empty masks: {empty_masks}")
-print(f"❌ Missing files: {missing_files}")
+print(f"Valid cases: {valid}")
+print(f"Missing files: {missing}")
+print(f"Empty masks: {empty}")
+print(f"Shape mismatches: {shape_mismatch}")
 
-if shape_mismatch == 0 and empty_masks == 0 and missing_files == 0:
-    print("\n✅ All dataset pairs are valid and ready for nnDetection training!")
+if missing == 0 and empty == 0 and shape_mismatch == 0:
+    print("\n✅ Dataset is ready for nnDetection preprocessing.")
 else:
-    print("\n⚠️ Some issues detected — check warnings before training.")
+    print("\n⚠️ Some issues detected. Inspect warnings.")
