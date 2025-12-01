@@ -1,28 +1,41 @@
-### --------------------------------------------------------------------
-### MAST Lung Lesion Conversion – Base Container
-### Built on Ducklett, code versioned on GitHub
-### --------------------------------------------------------------------
+# ============================================================
+# Dockerfile for MAST → nnDetection conversion on SOL cluster
+# ============================================================
 
-# 1. Base image from the DIAG registry
+# Base image provided by Radboudumc DIAG
 FROM dockerdex.umcn.nl:5005/diag/base-images:base-pt2.7.1
 
-# 2. Define the working directory
+# Working directory inside the container
 ARG CODE_DIR="/home/user/source"
 WORKDIR ${CODE_DIR}
 
-# 3. Install Git (for fetching latest code)
-RUN apt-get update && apt-get install -y --no-install-recommends git && \
+# Install git (needed to pull your repository)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git && \
     rm -rf /var/lib/apt/lists/*
 
-# 4. Clone the latest version of your GitHub repository
-RUN git clone --depth 1 https://github.com/Merlijn-H073/Stage_Radboudumc_MAST_Conversion.git ${CODE_DIR}/MAST_conversion
+# ============================================================
+# Clone your updated repository
+# ============================================================
+RUN git clone --depth 1 \
+    https://github.com/merlijn-h073/stage_radboudumc_mast_conversion.git \
+    ${CODE_DIR}/MAST_conversion
 
-# 5. Install required Python dependencies
-RUN pip3 install --no-cache-dir numpy pandas nibabel tqdm SimpleITK scikit-image
+# ============================================================
+# Install Python dependencies required by Convert_MAST_to_nnDetection.py
+# ============================================================
+RUN pip3 install --no-cache-dir \
+    numpy \
+    pandas \
+    nibabel \
+    tqdm \
+    SimpleITK \
+    scikit-image
 
-# 6. Set environment variables for Python path
-ENV PYTHONPATH="${PYTHONPATH}:${CODE_DIR}:${CODE_DIR}/MAST_conversion:/opt/ASAP/bin"
+# ============================================================
+# Ensure Python can import your repo
+# ============================================================
+ENV PYTHONPATH="${PYTHONPATH}:${CODE_DIR}:${CODE_DIR}/MAST_conversion"
 
-# 7. Default behavior — start an interactive shell
+# Default entrypoint
 ENTRYPOINT ["/bin/bash"]
-
