@@ -10,7 +10,7 @@
 
 # === Pyxis / Enroot container settings ===
 #SBATCH --gpus-per-task=0
-#SBATCH --container-image=dockerdex.umcn.nl:5005/merlijn-h073/stage_radboudumc_mast_conversion:2.3
+#SBATCH --container-image=dockerdex.umcn.nl:5005#merlijn-h073/stage_radboudumc_mast_conversion:2.3
 #SBATCH --container-mounts=/data:/data
 #SBATCH --no-container-remap-root
 
