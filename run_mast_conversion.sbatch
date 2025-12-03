@@ -6,29 +6,33 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
-#SBATCH --time=02:00:00
-
-# === Pyxis / Enroot container settings ===
+#SBATCH --time=04:00:00
 #SBATCH --gpus-per-task=0
-#SBATCH --container-image=dockerdex.umcn.nl:5005#merlijn-h073/stage_radboudumc_mast_conversion:2.4
+
+# Use your updated conversion image
+#SBATCH --container-image="dockerdex.umcn.nl:5005#merlijn-h073/stage_radboudumc_mast_conversion:2.5"
 #SBATCH --container-mounts=/data:/data
 #SBATCH --no-container-remap-root
 
-# === Environment variables passed into container ===
-export SOURCE_INPUTS="/data/bodyct/experiments/nielsrocholl/MAST/v2/inputsTr"
-export SOURCE_TARGETS="/data/bodyct/experiments/nielsrocholl/MAST/v2/targetsTr"
-export TARGET_ROOT="/data/bodyct/experiments/merlijnhilberink/MAST_nnDet"
-
-# Create logs dir if needed
-mkdir -p logs
+###############################################################################
+# CONFIGURATION
+###############################################################################
+# These must match your conversion script
+export SOURCE_INPUTS="/data/bodyct/experiments/merlijnhilberink/inputs"
+export SOURCE_TARGETS="/data/bodyct/experiments/merlijnhilberink/targets"
+export TARGET_ROOT="/data/bodyct/experiments/merlijnhilberink/Task501_MAST"
 
 echo "=== Starting MAST → nnDetection conversion ==="
-echo "Using inputs:       $SOURCE_INPUTS"
-echo "Using FU targets:   $SOURCE_TARGETS"
-echo "Writing to:         $TARGET_ROOT"
-echo "Running inside container: $SBATCH_CONTAINER_IMAGE"
+echo "SOURCE_INPUTS:   $SOURCE_INPUTS"
+echo "SOURCE_TARGETS:  $SOURCE_TARGETS"
+echo "TARGET_ROOT:     $TARGET_ROOT"
+echo "Docker image:    $SBATCH_CONTAINER_IMAGE"
 
-# Run conversion inside the container
-python /home/user/source/Convert_MAST_to_nnDetection.py
+mkdir -p logs
 
-echo "=== Conversion finished ==="
+###############################################################################
+# RUN THE PYTHON CONVERSION SCRIPT
+###############################################################################
+python /workspace/MAST_conversion/Convert_MAST_to_nnDetection.py
+
+echo "=== Conversion complete ==="
