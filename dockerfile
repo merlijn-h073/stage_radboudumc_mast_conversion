@@ -1,28 +1,29 @@
 # ============================================================
-# Dockerfile for MAST → nnDetection conversion (SOL cluster)
+# Local-build compatible Dockerfile for MAST → nnDetection conversion
 # ============================================================
 
-# Base image provided by Radboudumc DIAG
-FROM dockerdex.umcn.nl:5005/diag/base-images:base-pt2.7.1
+# Use a PUBLIC CUDA + PyTorch base image (works on Windows)
+FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
 
-# Working directory inside the container
-ARG CODE_DIR="/home/user/source"
+# Make sure everything is up to date
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Working directory inside container
+ARG CODE_DIR="/workspace"
 WORKDIR ${CODE_DIR}
 
-# Install system dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends git && \
-    rm -rf /var/lib/apt/lists/*
+# ============================================================
+# Copy your local repository into the container
+# (Much faster and avoids GitHub rate limits)
+# ============================================================
+COPY . ${CODE_DIR}/MAST_conversion/
 
 # ============================================================
-# Copy your updated repository into the image
+# Install Python dependencies required by Convert_MAST_to_nnDetection.py
 # ============================================================
-COPY . ${CODE_DIR}/MAST_conversion
-
-# ============================================================
-# Install Python dependencies
-# ============================================================
-RUN pip3 install --no-cache-dir \
+RUN pip install --no-cache-dir \
     numpy \
     pandas \
     nibabel \
@@ -31,7 +32,7 @@ RUN pip3 install --no-cache-dir \
     scikit-image
 
 # ============================================================
-# Make Python see your repo
+# Add your conversion package to PYTHONPATH
 # ============================================================
 ENV PYTHONPATH="${PYTHONPATH}:${CODE_DIR}:${CODE_DIR}/MAST_conversion"
 
