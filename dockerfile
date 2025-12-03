@@ -1,5 +1,5 @@
 # ============================================================
-# Dockerfile for MAST → nnDetection conversion on SOL cluster
+# Dockerfile for MAST → nnDetection conversion (SOL cluster)
 # ============================================================
 
 # Base image provided by Radboudumc DIAG
@@ -9,20 +9,18 @@ FROM dockerdex.umcn.nl:5005/diag/base-images:base-pt2.7.1
 ARG CODE_DIR="/home/user/source"
 WORKDIR ${CODE_DIR}
 
-# Install git (needed to pull your repository)
+# Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git && \
     rm -rf /var/lib/apt/lists/*
 
 # ============================================================
-# Clone your updated repository
+# Copy your updated repository into the image
 # ============================================================
-RUN git clone --depth 1 \
-    https://github.com/merlijn-h073/stage_radboudumc_mast_conversion.git \
-    ${CODE_DIR}/MAST_conversion
+COPY . ${CODE_DIR}/MAST_conversion
 
 # ============================================================
-# Install Python dependencies required by Convert_MAST_to_nnDetection.py
+# Install Python dependencies
 # ============================================================
 RUN pip3 install --no-cache-dir \
     numpy \
@@ -33,7 +31,7 @@ RUN pip3 install --no-cache-dir \
     scikit-image
 
 # ============================================================
-# Ensure Python can import your repo
+# Make Python see your repo
 # ============================================================
 ENV PYTHONPATH="${PYTHONPATH}:${CODE_DIR}:${CODE_DIR}/MAST_conversion"
 
