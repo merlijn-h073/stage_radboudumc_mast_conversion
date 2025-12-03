@@ -18,8 +18,8 @@
 # CONFIGURATION
 ###############################################################################
 # These must match your conversion script
-export SOURCE_INPUTS="/data/bodyct/experiments/merlijnhilberink/inputs"
-export SOURCE_TARGETS="/data/bodyct/experiments/merlijnhilberink/targets"
+export SOURCE_INPUTS="/data/bodyct/experiments/nielsrocholl/MAST/v2/inputsTr"
+export SOURCE_TARGETS="/data/bodyct/experiments/nielsrocholl/MAST/v2/targetsTr"
 export TARGET_ROOT="/data/bodyct/experiments/merlijnhilberink/Task501_MAST"
 
 echo "=== Starting MAST → nnDetection conversion ==="
