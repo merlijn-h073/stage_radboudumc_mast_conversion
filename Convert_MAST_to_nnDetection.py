@@ -192,7 +192,7 @@ for csv_path in tqdm(sorted(SOURCE_INPUTS.glob("*.csv")), desc="Processing patie
         if is_test:
             # For nnDetection, test entries usually have only "image";
             # labelsTs still exist, but are not referenced here.
-            test_cases.append({"image": rel_img})
+            test_cases.append({"image": rel_img, "label": rel_lbl})
         else:
             train_cases.append({"image": rel_img, "label": rel_lbl})
 
